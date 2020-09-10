@@ -1,45 +1,45 @@
-struct RebuildBlkMsg{
-	unordered_map<int, string> umapMissTxIdx;
-	unordered_map<int,int> umapChangeIdx;
-	set<int> setDelIdx;
-	int cost = 0;
-	int extraCost = 0;
-	bool addMissTx(const int idx, const string& hash, const int sz){
-		if(umapMissTxIdx.count(idx) == 0){
-			umapMissTxIdx[idx]= hash;
-			cost += sz;
-			return true;
-		}
-		return false;
-	}
+// struct RebuildBlkMsg{
+// 	unordered_map<int, string> umapMissTxIdx;
+// 	unordered_map<int,int> umapChangeIdx;
+// 	set<int> setDelIdx;
+// 	int cost = 0;
+// 	int extraCost = 0;
+// 	bool addMissTx(const int idx, const string& hash, const int sz){
+// 		if(umapMissTxIdx.count(idx) == 0){
+// 			umapMissTxIdx[idx]= hash;
+// 			cost += sz;
+// 			return true;
+// 		}
+// 		return false;
+// 	}
 
-	bool addDelIdx(const int idx){
-		if(setDelIdx.count(idx) == 0){
-			setDelIdx.insert(idx);
-			cost += 2;
-			extraCost += 2;
-			return true;
-		}
-		return false;
-	}
+// 	bool addDelIdx(const int idx){
+// 		if(setDelIdx.count(idx) == 0){
+// 			setDelIdx.insert(idx);
+// 			cost += 2;
+// 			extraCost += 2;
+// 			return true;
+// 		}
+// 		return false;
+// 	}
 
-	bool addChangeIdx(const int idx1, const int idx2){
-		if(umapChangeIdx.count(idx1)==0){
-			umapChangeIdx[idx1] = idx2;
-			cost += 4;
-			extraCost += 4;
-			return true;
-		}
-		return false;
-	}
+// 	bool addChangeIdx(const int idx1, const int idx2){
+// 		if(umapChangeIdx.count(idx1)==0){
+// 			umapChangeIdx[idx1] = idx2;
+// 			cost += 4;
+// 			extraCost += 4;
+// 			return true;
+// 		}
+// 		return false;
+// 	}
 
-	void clear(){
-		umapChangeIdx.clear();
-		umapMissTxIdx.clear();
-		setDelIdx.clear();
-		cost = 0;
-	}
-};
+// 	void clear(){
+// 		umapChangeIdx.clear();
+// 		umapMissTxIdx.clear();
+// 		setDelIdx.clear();
+// 		cost = 0;
+// 	}
+// };
 
 
 // void reConstructBlock(const vector<Transaction>& vPredTx, const int txCnt, const pair<int,int>& range, const RebuildBlkMsg& rbm, vector<string>& newBlk) {
