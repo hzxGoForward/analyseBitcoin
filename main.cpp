@@ -11,6 +11,7 @@
 #include <set>
 #include <cassert>
 #include <cstring>
+#include "serialize.h"
 using namespace std;
 
 vector<int> g_error_blk;
@@ -297,6 +298,43 @@ public:
 		vCost.push_back(vChangeRecord.size());
 		vCost.push_back(vDelIndex.size());
 	}
+
+
+	// unordered_map<int, int> vChangeRecord;
+	// set<int> vDelIndex;
+	// pair<int,int> range;
+	// int nMissTxCnt;
+	// int nMissTxSz;
+	// int txCnt;
+	ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream &s, Operation ser_action)
+    {
+		vector<pair<short,short>> vC;
+		for(auto&e:vChangeRecord)
+			vC.emplace_back(static_cast<short>(e.first), static_cast<short>(e.second));
+		vector<short> del;
+		for(auto&e:vDelIndex)
+			del.emplace_back(e);
+        READWRITE(vC);
+        READWRITE(del);
+        READWRITE(pair<short,short>{static_cast<short>(range.first),static_cast<short>(range.second)});
+        READWRITE(static_cast<short>(nMissTxCnt));
+		READWRITE(static_cast<short>(txCnt));
+    }
+    // friend void operator<<(const std::ostream &os, const Human &human)
+    // {
+    //     cout << "age: " << human.age << " height: " << human.height << " sex: " << human.sex;
+    //     cout << " friends: ";
+    //     for (auto &e : human.friends)
+    //         cout << e << " ";
+    //     cout << endl;
+    // }
+
+
+
+
 };
 
 void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Transaction>& vPredTx, const vector<Transaction>& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
@@ -306,7 +344,7 @@ void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Tran
 	bool rverifyRes = rm.verifyBlock(newBlkTx,vBlkTx, msg);
 	if (!rverifyRes)
 		g_error_blk.push_back(blkNum);
-	
+	msg += format("serialize: %d\n", GetSerializeSize(rm));
 	printf("%s\n", msg.data());
 	os << msg; rm.printMsg();
 }
@@ -373,8 +411,8 @@ vector<int> CompareBlockTxandPredTx(
 	unordered_map<string, int>& mapBlkTxIndex, unordered_map<string, int>& mapPredTxIndex, 
 	ostringstream& os, unordered_map<int,string>& mapMissTx, int& nMissTxSz) {
 	if (vBlkTx.size() <= 1) {
-		std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", 580, 2);
-		return {580, 2};
+		std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", g_default_tx_sz+80, 2);
+		return {g_default_tx_sz+80, 0,0,0, 0};
 	}
 
 	// 获取预测序列的范围
@@ -393,6 +431,7 @@ vector<int> CompareBlockTxandPredTx(
 	calculateCost(mapMissTx, vPredTx, vBlkTx, blkNum, rm, os);
 	vector<int> cost;
 	rm.getCost(cost);
+	cost.push_back(GetSerializeSize(rm));
 	return std::move(cost);
 }
 
@@ -404,12 +443,13 @@ vector<int> CompareBlockTxandPredTx(
 /// <param name="startBlkNum"></param>
 /// <param name="endBlkNum"></param>
 void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
-	double totalCostNone = 0, extraCostNone = 0;
+	double totalCostNone = 0, extraCostNone = 0, seExtraCost = 0;
 	vector<vector<int>> vpCostNone;
 	const string save_dir = rootDir+"重构区块_NEW.log";
 	const string analyse_dir = rootDir + "res.txt";
 	ostringstream os, ansOs;
-	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt\n";
+	double maxSeCost = 0;
+	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz\n";
 	while (startBlkNum <= endBlkNum) {
 		const string str_blknum = to_string(startBlkNum);
 		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
@@ -438,13 +478,16 @@ void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
 			vpCostNone.push_back(p1);
 		totalCostNone += vpCostNone.back()[0];
 		extraCostNone += vpCostNone.back()[1];
-        ansOs << format("%d %d %d %d %d %d %d %d %d\n", startBlkNum, blkSz, vBlkTx.size(), vpCostNone.back()[0], vpCostNone.back()[1],p.first, p.second, vpCostNone.back()[2], vpCostNone.back()[3]);
+		seExtraCost += vpCostNone.back().back();
+		maxSeCost = max(maxSeCost,static_cast<double>(vpCostNone.back().back()));
+        ansOs << format("%d %d %d %d %d %d %d %d %d %d\n", startBlkNum, blkSz, vBlkTx.size(), vpCostNone.back()[0], vpCostNone.back()[1],p.first, p.second, vpCostNone.back()[2], vpCostNone.back()[3],vpCostNone.back().back());
 		startBlkNum++;
 	}
 	string msg = "";
-
-	msg += format("3-------Total Block Count: %d, Total Cost Bytes: %f, Total Extra Cost Bytes: %f \n", vpCostNone.size(), totalCostNone, extraCostNone);
-	msg += format("3-------Per Block Cost: %f, Per ExtraCost: %f\n", totalCostNone / vpCostNone.size(), extraCostNone / vpCostNone.size());
+	size_t blkCnt = vpCostNone.size();
+	msg += format("3-------Total:Block Count: %d, Cost Bytes: %f, Extra Cost Bytes: %f,seExtra cost: %f \n", blkCnt, totalCostNone, extraCostNone,seExtraCost );
+	msg += format("3-------Per: Block Cost: %f, ExtraCost: %f,SerializeCost: %f\n", totalCostNone / blkCnt, extraCostNone / blkCnt, seExtraCost/blkCnt);
+	msg += format("max SeCost: %f\n", maxSeCost);
 	os << msg;
 	writeFile(save_dir, os.str());
 	writeFile(analyse_dir, ansOs.str());
