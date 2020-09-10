@@ -440,7 +440,7 @@ pair<int, int> CompareBlockTxandPredTx2(const int blkNum, const vector<Transacti
 	int extraCost = mapMissTx.size()*2 + nchangeRecordTxSize + ndelTxSize - vDelIndex.size()*2  + rangeSz ;
 	int totalCost = 80 + nmissTxSize + extraCost;
 	msg += format("total Sync Cost Bytes: %d, Missed Tx Percent %f , Extra Cost bytes: %d \n", totalCost, nmissTxSize / totalCost, extraCost);
-	msg += format("多余delIndex数量: %u , 节约字节数: %d ", vDelIndex.size(), vDelIndex.size()*2);
+	msg += format("多余delIndex数量: %u , 节约字节数: %d\n", vDelIndex.size(), vDelIndex.size()*2);
 	std::printf("%s", msg.data());
 	os << msg;
 
@@ -506,7 +506,7 @@ void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
 int main() {
 	string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200903/";
 	int startBlkNum = 646580;// 646560;
-	int endBlkNum = 647486;// 647486;
+	int endBlkNum = 647544;// 647486;
 	calculate(rootDir, startBlkNum, endBlkNum);
 	printf("构造失败区块数量: %lu \n", g_error_blk.size());
 	for(auto&blkNum:g_error_blk)
