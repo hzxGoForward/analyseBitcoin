@@ -4,18 +4,14 @@
 #include <vector>
 #include <string>
 #include <sstream>
-#include <exception>
 #include <algorithm>
 #include <unordered_map>
 #include <map>
 #include <set>
-#include <cassert>
 #include <cstring>
 #include "serialize.h"
+#include "readCmpctBlk.h"
 using namespace std;
-
-vector<int> g_error_blk;
-const int g_default_tx_sz = 400;
 
 /*
 1. 将新区块中的交易组织成结构体形式
@@ -47,43 +43,6 @@ public:
 	}
 };
 
-void writeFile(const string& filepath, const string& msg)
-{
-	ofstream ofs;
-	ofs.open(filepath, ios::out);
-	if (ofs.is_open()) {
-		// cout << "正在打开文件写入..." << filepath << endl;
-		ofs.write(msg.data(), msg.size());
-		ofs.close();
-	}
-	else {
-		std::printf("%s \n",("打开文件失败, 文件名： "+ filepath).data());
-	}
-	std::printf("%s \n", ("成功写入： " + filepath).data());
-}
-
-
-void split(const string s, const char token, vector<string>& vs) {
-	stringstream iss(s);
-	string word;
-	while (getline(iss, word, token)) {
-		vs.push_back(word);
-	}
-}
-
-// 仔细学习这个format函数的含义
-template< typename... Args >
-std::string format(const char* format, Args... args) {
-	int length = std::snprintf(nullptr, 0, format, args...);
-	assert(length >= 0);
-
-	char* buf = new char[length + 1];
-	std::snprintf(buf, length + 1, format, args...);
-
-	std::string str(buf);
-	delete[] buf;
-	return str;
-}
 
 /// <summary>
 /// 从区块文件中读取交易数据，并且返回其中最大的时间戳的那笔交易
@@ -105,10 +64,12 @@ string readTxSequence(vector<Transaction>& vtx, unordered_map<string,int>& mapTx
 	string txid = "";
 	string lasttxHash;// 最后一笔交易的哈希值
 	while (!ifs.eof()) {
-		memset(buf, '\n', 1024);
+		memset(buf, '\n', sizeof(buf));
 		ifs.getline(buf, sizeof(buf));
 		if (buf[0] == '2' && buf[1] == '0' && buf[2] == '2' && buf[3] == '0' && buf[4] == '-') {
 			string line(buf);
+			if(line.size()<2)
+				continue;
 			line.pop_back();
 			vector<string> tmp;
 			split(line, ' ', tmp);
@@ -173,30 +134,6 @@ pair<size_t,size_t> getPredictRange(const vector<Transaction>& vBlkTx, unordered
 	return ans;
 }
 
-void fillBeforeOffset(const vector<Transaction>& vBlkTx, const int offset, unordered_map<string, int>& mapPredTxIndex,unordered_map<int,string>& mapMissTx,unordered_map<int, int>& vChangeRecord, int& nMissTxSz){
-	int bj = 0;
-	while(bj < offset){
-		//if(vBlkTx[bj].missed && mapPredTxIndex.count(vBlkTx[bj].txhash)==0){
-		if(mapPredTxIndex.count(vBlkTx[bj].txhash)==0){
-			if(mapMissTx.count(bj)==0){
-				mapMissTx[bj] = vBlkTx[bj].txhash;
-				if(vBlkTx[bj].sz>0)
-					nMissTxSz += vBlkTx[bj].sz;
-				else
-				{
-					nMissTxSz += g_default_tx_sz;
-				}
-			}
-			bj++;
-		}
-		else if(mapPredTxIndex.count(vBlkTx[bj].txhash)){
-			const int index = mapPredTxIndex[vBlkTx[bj].txhash];
-			vChangeRecord[index] = bj;
-		}
-		bj++;
-	}
-}
-
 // 新建结构体,用于存储重建区块需要的数据结构
 class ReconstructMsg{
 public:
@@ -207,7 +144,7 @@ public:
 	int nMissTxSz;
 	int txCnt;
 
-	// 移动构造函数
+	// 构造函数
 	ReconstructMsg(
 		unordered_map<int, int> vChange,
 		set<int> vD,
@@ -299,13 +236,6 @@ public:
 		vCost.push_back(vDelIndex.size());
 	}
 
-
-	// unordered_map<int, int> vChangeRecord;
-	// set<int> vDelIndex;
-	// pair<int,int> range;
-	// int nMissTxCnt;
-	// int nMissTxSz;
-	// int txCnt;
 	ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -323,18 +253,6 @@ public:
         READWRITE(static_cast<short>(nMissTxCnt));
 		READWRITE(static_cast<short>(txCnt));
     }
-    // friend void operator<<(const std::ostream &os, const Human &human)
-    // {
-    //     cout << "age: " << human.age << " height: " << human.height << " sex: " << human.sex;
-    //     cout << " friends: ";
-    //     for (auto &e : human.friends)
-    //         cout << e << " ";
-    //     cout << endl;
-    // }
-
-
-
-
 };
 
 void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Transaction>& vPredTx, const vector<Transaction>& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
@@ -349,6 +267,7 @@ void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Tran
 	os << msg; rm.printMsg();
 }
 
+// 计算预测序列和实际区块序列误差,method指定了比较方法
 void calDifference(
 	const int method,
 	const pair<int,int>& range, const vector<Transaction>& vBlkTx, const vector<Transaction>& vPredTx, 
@@ -422,10 +341,6 @@ vector<int> CompareBlockTxandPredTx(
 
 	// 将区块中[0, offset）的交易标记为miss状态，或者是索引发生变化的状态
 	calDifference(method,range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,mapMissTx,vChangeRecord,vDelIndex,nMissTxSz);
-	// if(method == 1)
-	// 	calDifferenceOne(range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,mapMissTx,vChangeRecord,vDelIndex,nMissTxSz);
-	// else
-	// 	calDifferenceTwo(range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,mapMissTx,vChangeRecord,vDelIndex,nMissTxSz);
 
 	ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,mapMissTx.size(), nMissTxSz, vBlkTx.size());
 	calculateCost(mapMissTx, vPredTx, vBlkTx, blkNum, rm, os);
@@ -442,14 +357,14 @@ vector<int> CompareBlockTxandPredTx(
 /// <param name="rootDir"></param>
 /// <param name="startBlkNum"></param>
 /// <param name="endBlkNum"></param>
-void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
+void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCmpctInfo, int startBlkNum, int endBlkNum) {
 	double totalCostNone = 0, extraCostNone = 0, seExtraCost = 0;
 	vector<vector<int>> vpCostNone;
 	const string save_dir = rootDir+"重构区块_NEW.log";
 	const string analyse_dir = rootDir + "res.txt";
 	ostringstream os, ansOs;
-	double maxSeCost = 0;
-	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz\n";
+	int cmpctBlkHit = 0;
+	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz\n";
 	while (startBlkNum <= endBlkNum) {
 		const string str_blknum = to_string(startBlkNum);
 		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
@@ -479,15 +394,20 @@ void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
 		totalCostNone += vpCostNone.back()[0];
 		extraCostNone += vpCostNone.back()[1];
 		seExtraCost += vpCostNone.back().back();
-		maxSeCost = max(maxSeCost,static_cast<double>(vpCostNone.back().back()));
-        ansOs << format("%d %d %d %d %d %d %d %d %d %d\n", startBlkNum, blkSz, vBlkTx.size(), vpCostNone.back()[0], vpCostNone.back()[1],p.first, p.second, vpCostNone.back()[2], vpCostNone.back()[3],vpCostNone.back().back());
+		
+		double cmpctSz = 6.2 * vBlkTx.size();
+		if(mapCmpctInfo.count(startBlkNum)){
+			cmpctSz = mapCmpctInfo[startBlkNum]->blkSz;
+			cmpctBlkHit++;
+		}
+        ansOs << format("%d %d %d %d %d %d %d %d %d %d %d\n", startBlkNum, blkSz, vBlkTx.size(), vpCostNone.back()[0], vpCostNone.back()[1],p.first, p.second, vpCostNone.back()[2], vpCostNone.back()[3],vpCostNone.back().back(), static_cast<int>(cmpctSz));
 		startBlkNum++;
 	}
 	string msg = "";
 	size_t blkCnt = vpCostNone.size();
 	msg += format("3-------Total:Block Count: %d, Cost Bytes: %f, Extra Cost Bytes: %f,seExtra cost: %f \n", blkCnt, totalCostNone, extraCostNone,seExtraCost );
 	msg += format("3-------Per: Block Cost: %f, ExtraCost: %f,SerializeCost: %f\n", totalCostNone / blkCnt, extraCostNone / blkCnt, seExtraCost/blkCnt);
-	msg += format("max SeCost: %f\n", maxSeCost);
+	msg += format("压缩区块大小数: %d, 总区块数: %d\n",cmpctBlkHit,blkCnt);
 	os << msg;
 	writeFile(save_dir, os.str());
 	writeFile(analyse_dir, ansOs.str());
@@ -496,9 +416,12 @@ void calculate(const string& rootDir, int startBlkNum, int endBlkNum) {
 
 int main() {
 	string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200903/";
+	string cmpctBlkdir = rootDir+"2020-09-";
+	map<int,std::shared_ptr<CompactInfo>> mapCmpctInfo;
+	getCmpctInfo(cmpctBlkdir, 3, 10, mapCmpctInfo);
 	int startBlkNum = 646560;// 646560;
 	int endBlkNum = 647544;// 647486;
-	calculate(rootDir, startBlkNum, endBlkNum);
+	calculate(rootDir, mapCmpctInfo, startBlkNum, endBlkNum);
 	printf("构造失败区块数量: %lu \n", g_error_blk.size());
 	for(auto&blkNum:g_error_blk)
 		printf("%d \n", blkNum);
