@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <set>
 #include <chrono>
+#include <string>
 #include "transaction.h"
 #include "util.h"
 #include "serialize.h"
@@ -105,6 +106,20 @@ public:
 	}
 
 
+	void printfDetail(const string& dir = ""){
+		ostringstream os;
+		os<<format("[%d, %d]\n", range.first, range.second);
+		os<<"DelIndex: "<<vDelIndex.size()<<"\n";
+		for(auto&e: vDelIndex)
+			os<<e<<" ";
+		os<<"\nChangeIndex: "<<vChangeRecord.size()<<"\n";
+		for(auto&e:vChangeRecord)
+			os<<e.first<<"->"<<e.second;
+		os<<"\n";
+		printf("%s\n", os.str());
+		writeFile(dir, os.str());
+	}
+
 	// 计算总字节,额外字节,缺失交易数,缺失交易大小
 	void getCost(vector<int>& vCost){
 		int rangeSz = 4;
@@ -116,6 +131,13 @@ public:
 		vCost.push_back(extraCost);
 		vCost.push_back(vChangeRecord.size());
 		vCost.push_back(vDelIndex.size());
+	}
+
+	// 获得额外花费
+	int getExtraCost(){
+		int nchangeRecordTxSize = vChangeRecord.size() * 4;
+		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + 4 ;
+		return extraCost;
 	}
 
 	ADD_SERIALIZE_METHODS;
