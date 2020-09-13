@@ -33,9 +33,7 @@ void writeFile(const string& filepath, const string& msg)
 
 
 void split(const string s, const char token, vector<string>& vs) {
-    if(s.empty())
-        return;
-	stringstream iss(s);
+	std::stringstream iss(s);
 	string word;
 	while (getline(iss, word, token)) {
 		vs.push_back(word);

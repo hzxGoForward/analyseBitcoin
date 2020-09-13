@@ -13,6 +13,13 @@
 #include "readCmpctBlk.h"
 using namespace std;
 
+class Transaction;
+
+typedef vector<Transaction> VT;
+typedef const VT CVT;
+typedef unordered_map<string,int> UMapTxIndex;
+typedef const pair<int,int> CPI;
+
 /*
 1. 将新区块中的交易组织成结构体形式
 2. 从新区块中挑出本地最近接收的一笔交易tx以及接收时间。
@@ -52,7 +59,7 @@ public:
 /// <param name="mapTxIndex">为每一笔交易建立哈希值到其索引的映射</param>
 /// <param name="file_dir">文件路径</param>
 /// <returns></returns>
-string readTxSequence(vector<Transaction>& vtx, unordered_map<string,int>& mapTxIndex, const string& file_dir, int& blkSz) {
+string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, int& blkSz) {
 	ifstream ifs(file_dir, ios::in);
 	if (!ifs.is_open()) {
 		string msg = format("无法打开文件 %s", file_dir.data());
@@ -98,7 +105,7 @@ string readTxSequence(vector<Transaction>& vtx, unordered_map<string,int>& mapTx
 }
 
 
-pair<int,int> getMissTxCntSize(const vector<Transaction>& vBlkTx, const vector<Transaction>& vPredTx, unordered_map<string, int>& mapPredTxIndex, unordered_map<int,string>& mapMissTx) {
+pair<int,int> getMissTxCntSize(CVT& vBlkTx, CVT& vPredTx, unordered_map<string, int>& mapPredTxIndex, unordered_map<int,string>& mapMissTx) {
 	size_t sz=0;
 	for (size_t i = 0; i < vBlkTx.size(); ++i) {
 		if (vBlkTx[i].missed || mapPredTxIndex.count(vBlkTx[i].txhash)==0){
@@ -115,7 +122,7 @@ pair<int,int> getMissTxCntSize(const vector<Transaction>& vBlkTx, const vector<T
 }
 
 // 获取预测序列的起始和结束
-pair<size_t,size_t> getPredictRange(const vector<Transaction>& vBlkTx, unordered_map<string, int>& mapPredTxIndex){
+pair<size_t,size_t> getPredictRange(CVT& vBlkTx, unordered_map<string, int>& mapPredTxIndex){
 	pair<int,int> ans = {mapPredTxIndex.size(),0};
 	pair<string,string> ansHash = {"",""};
 	for(size_t i = 0; i < vBlkTx.size(); ++i){
@@ -156,7 +163,7 @@ public:
 
 
 	/// 重建区块
-	void reConstructBlock(const unordered_map<int,string>& mapMissTx, const vector<Transaction>& vPredTx, vector<string>& newBlk){
+	void reConstructBlock(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, vector<string>& newBlk){
 		// 根据得到的误差重新构建新的区块大小
 		newBlk.reserve(txCnt);
 		newBlk.resize(txCnt, "");
@@ -186,7 +193,7 @@ public:
 	}
 
 	// 验证区块合法性
-	bool verifyBlock(const vector<string>& newBlkTx, const vector<Transaction>& vBlkTx, string& msg)const{
+	bool verifyBlock(const vector<string>& newBlkTx, CVT& vBlkTx, string& msg)const{
 		if (newBlkTx.size() != vBlkTx.size()) {
 		std::printf("ERROR: two block with different size\n");
 		return false;
@@ -255,7 +262,7 @@ public:
     }
 };
 
-void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Transaction>& vPredTx, const vector<Transaction>& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
+void calculateCost(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, CVT& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
 	vector<string> newBlkTx;
 	string msg = rm.printMsg();
 	rm.reConstructBlock(mapMissTx,vPredTx,newBlkTx);
@@ -267,14 +274,43 @@ void calculateCost(const unordered_map<int,string>& mapMissTx, const vector<Tran
 	os << msg; rm.printMsg();
 }
 
+// 求每一个存在于vBlkTx中的交易,它的最长连续序列是多少
+void getLCSeq(CPI& range, CVT& vBlkTx, CVT& vPredTx,UMapTxIndex& mapBlkTxIndex, UMapTxIndex& mapPredTxIndex,UMapTxIndex& ptr){
+
+	int i = range.first;
+	while(i<= range.second){
+		if(mapBlkTxIndex.count(vPredTx[i].txhash)==0){
+			++i;
+			continue;
+		}
+		int b_i = mapBlkTxIndex[vPredTx[i].txhash];
+		int end = i, cnt = 0;
+		while(end <= range.second && b_i < vBlkTx.size() && (mapPredTxIndex.count(vPredTx[end].txhash)==0 || vBlkTx[b_i].txhash == vPredTx[end].txhash)){
+			b_i++;
+			if(mapPredTxIndex.count(vPredTx[end++].txhash))
+				++cnt;
+		}
+		
+		while(i<end){
+			if(mapBlkTxIndex.count(vPredTx[i].txhash))
+				ptr.emplace(vPredTx[i].txhash, cnt--);
+			i++;
+		}
+	}
+}
+
 // 计算预测序列和实际区块序列误差,method指定了比较方法
 void calDifference(
 	const int method,
-	const pair<int,int>& range, const vector<Transaction>& vBlkTx, const vector<Transaction>& vPredTx, 
-	unordered_map<string,int>& mapBlkTxIndex,unordered_map<string,int>& mapPredTxIndex,
+	CPI& range, CVT& vBlkTx, CVT& vPredTx, 
+	UMapTxIndex& mapBlkTxIndex,UMapTxIndex& mapPredTxIndex,
 	unordered_map<int,string>& mapMissTx,unordered_map<int,int>& vChangeRecord,
 	set<int>& vDelIndex,int& nMissTxSz
 ){
+
+	// 求解每个哈希值的最长子序列长度
+	UMapTxIndex res;
+	getLCSeq(range,vBlkTx, vPredTx, mapBlkTxIndex, mapPredTxIndex, res);
 	// 将区块中[0, offset）的交易标记为miss状态，或者是索引发生变化的状态
 	int pi = range.first;
 	size_t bj = 0;
@@ -307,7 +343,10 @@ void calDifference(
 			vDelIndex.insert(pi++);
 		}
 		else {
-			if(method == 1){
+			// 
+			const int pi_len = res[vPredTx[pi].txhash];
+			const int bj_len = res[vBlkTx[bj].txhash];
+			if(pi_len < bj_len){
 				// 记录pi在vBlkTx中的索引,然后pi跳过
 				const int pi_idx = mapBlkTxIndex[vPredTx[pi].txhash];
 				vChangeRecord[pi] = pi_idx;
@@ -323,10 +362,13 @@ void calDifference(
 	}
 }
 
+
+
+
 /// 比较预测序列和真实的区块序列的区别
 vector<int> CompareBlockTxandPredTx(
 	const int method,
-	const int blkNum, const vector<Transaction>& vBlkTx, const vector<Transaction>& vPredTx, 
+	const int blkNum, CVT& vBlkTx, CVT& vPredTx, 
 	unordered_map<string, int>& mapBlkTxIndex, unordered_map<string, int>& mapPredTxIndex, 
 	ostringstream& os, unordered_map<int,string>& mapMissTx, int& nMissTxSz) {
 	if (vBlkTx.size() <= 1) {
@@ -369,7 +411,7 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 		const string str_blknum = to_string(startBlkNum);
 		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
 		string predBlkwithNone_dir = rootDir + str_blknum + "_predBlk_with_MissTx.log";
-		vector<Transaction> vBlkTx, vPredTxNone;
+		VT vBlkTx, vPredTxNone;
 		unordered_map<string, int> mapBlkTxIndex, mapPredTxNoneIndex;
 		// 读取交易序列
 		int blkSz = 0;
@@ -386,11 +428,7 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 		os << format("------------block height: %d------------- \n", startBlkNum);
 
 		auto p1 = CompareBlockTxandPredTx(1,startBlkNum,vBlkTx, vPredTxNone, mapBlkTxIndex, mapPredTxNoneIndex, os, umapMissTx, p.second);
-		auto p2 = CompareBlockTxandPredTx(2,startBlkNum,vBlkTx, vPredTxNone, mapBlkTxIndex, mapPredTxNoneIndex, os, umapMissTx, p.second);
-		if(p2[1] < p1[1])
-			vpCostNone.push_back(p2);
-		else
-			vpCostNone.push_back(p1);
+		vpCostNone.emplace_back(std::move(p1));
 		totalCostNone += vpCostNone.back()[0];
 		extraCostNone += vpCostNone.back()[1];
 		seExtraCost += vpCostNone.back().back();
@@ -420,7 +458,7 @@ int main() {
 	map<int,std::shared_ptr<CompactInfo>> mapCmpctInfo;
 	getCmpctInfo(cmpctBlkdir, 3, 10, mapCmpctInfo);
 	int startBlkNum = 646560;// 646560;
-	int endBlkNum = 647544;// 647486;
+	int endBlkNum = 647544;// 647544;
 	calculate(rootDir, mapCmpctInfo, startBlkNum, endBlkNum);
 	printf("构造失败区块数量: %lu \n", g_error_blk.size());
 	for(auto&blkNum:g_error_blk)
