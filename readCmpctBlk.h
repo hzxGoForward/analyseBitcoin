@@ -1,3 +1,7 @@
+/*
+本程序用于读取压缩区块中接收区块的信息,用于证明程序中交易池
+*/
+
 #include <cstdio>
 #include <fstream>
 #include <sstream>

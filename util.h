@@ -1,3 +1,7 @@
+#ifndef _UTIL_H
+
+#define _UTIL_H
+
 #include <string>
 #include <cstdio>
 #include <sstream>
@@ -53,3 +57,5 @@ std::string format(const char* format, Args... args) {
 	delete[] buf;
 	return str;
 }
+
+#endif

@@ -9,16 +9,17 @@
 #include <map>
 #include <set>
 #include <cstring>
-#include "serialize.h"
+#include <chrono>
+
+
 #include "readCmpctBlk.h"
+#include "redifine.h"
+#include "reconstructBlk.h"
+
+
 using namespace std;
+using namespace std::chrono;
 
-class Transaction;
-
-typedef vector<Transaction> VT;
-typedef const VT CVT;
-typedef unordered_map<string,int> UMapTxIndex;
-typedef const pair<int,int> CPI;
 
 /*
 1. 将新区块中的交易组织成结构体形式
@@ -28,27 +29,7 @@ typedef const pair<int,int> CPI;
 5. 与新的区块中的交易序列进行比较，查看接近程度。
 */
 
-// step 1. 新区块的交易格式
-class Transaction {
-public:
-	//进入时间 交易哈希 对应索引 交易费用 交易大小 交易权重
-	string entertime;
-	string txhash;
-	int fee;
-	int sz;
-	int weight;
-	bool missed;
-	bool onlyInSeq;
-	Transaction(const string& e, const string& t,  const int f, const int s, const int w,const bool m = false, const bool seq = false) 
-		:entertime(e), txhash(t), fee(f), sz(s), weight(w), missed(m), onlyInSeq(seq) {}
-	void operator = (const Transaction& t) {
-		entertime = t.entertime;
-		txhash = t.txhash;
-		fee = t.fee;
-		sz = t.sz;
-		weight = t.weight;
-	}
-};
+
 
 
 /// <summary>
@@ -85,7 +66,7 @@ string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, 
 			bool missed = (tmp[2] == "Pool" || tmp[2] == "None");
 			bool onlyInSeq = tmp[2] == "Seq";
 			vtx.emplace_back(tmp[0], tmp[1], stoi(tmp[3]), stoi(tmp[4]), stoi(tmp[5]), missed, onlyInSeq);
-			if (tmp[2] != "None" && tmp[0] > minTime) {
+			if ((tmp[2] != "None" && tmp[2] != "Pool") && tmp[0] > minTime) {
 				minTime = tmp[0];
 				txid = tmp[1];
 			}
@@ -101,7 +82,7 @@ string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, 
 		else if (buf[0] == 'p'||buf[0]=='[')
 			break;
 	}
-	return minTime;
+	return txid;
 }
 
 
@@ -141,137 +122,19 @@ pair<size_t,size_t> getPredictRange(CVT& vBlkTx, unordered_map<string, int>& map
 	return ans;
 }
 
-// 新建结构体,用于存储重建区块需要的数据结构
-class ReconstructMsg{
-public:
-	unordered_map<int, int> vChangeRecord;
-	set<int> vDelIndex;
-	pair<int,int> range;
-	int nMissTxCnt;
-	int nMissTxSz;
-	int txCnt;
 
-	// 构造函数
-	ReconstructMsg(
-		unordered_map<int, int> vChange,
-		set<int> vD,
-		pair<int,int> rg,
-		int nTxCnt,
-		int nTxSz,
-		int cnt
-	):range(rg),vDelIndex(vD),vChangeRecord(vChange),nMissTxCnt(nTxCnt),nMissTxSz(nTxSz),txCnt(cnt){}
-
-
-	/// 重建区块
-	void reConstructBlock(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, vector<string>& newBlk){
-		// 根据得到的误差重新构建新的区块大小
-		newBlk.reserve(txCnt);
-		newBlk.resize(txCnt, "");
-		// 首先构建缺失的交易
-		std::set<string> missHashSet;
-		for (auto& p : mapMissTx){
-			newBlk[p.first] = p.second;
-			missHashSet.insert(p.second);
-		}
-
-		// 构建位置发生变化的交易
-		for (auto& e : vChangeRecord)
-			newBlk[e.second] = vPredTx[e.first].txhash;
-		// 从vPredTx的range范围内构建交易
-		int i = range.first, j = 0;
-		while (i <= range.second&&j<txCnt) {
-			// 如果j已经被填充了，则跳过j
-			while (j<txCnt && newBlk[j] != "")
-				j++;
-			// 如果是需要删除的交易，或者是位置发生变化的交易
-			while (i <= range.second&&(vChangeRecord.count(i) || vDelIndex.count(i)||missHashSet.count(vPredTx[i].txhash))){
-				i++;
-			}
-			if(i<=range.second && j < txCnt)
-				newBlk[j++] = vPredTx[i++].txhash;
-		}
-	}
-
-	// 验证区块合法性
-	bool verifyBlock(const vector<string>& newBlkTx, CVT& vBlkTx, string& msg)const{
-		if (newBlkTx.size() != vBlkTx.size()) {
-		std::printf("ERROR: two block with different size\n");
-		return false;
-		}
-		for (size_t i = 0; i < newBlkTx.size(); ++i) {
-			if (newBlkTx[i] != vBlkTx[i].txhash) {
-				std::printf("ERROR: %lu index not match with\n [%s] \n [%s]\n", i, newBlkTx[i].data(), vBlkTx[i].txhash.data());
-				msg += format("Construct Failed ××××××××××××××××××××××××××\n\n");
-				return false;
-			}
-		}
-	msg += format("Construct Succeed √√√√√√√√√√√√√√√√√√√√√√√√√\n\n");
-		return true;
-	}
-
-	// 打印各个结果
-	string printMsg()const{
-		string msg = "";
-		msg += format("Tx Count in New Block: %d\n", txCnt);
-		msg += format("Predict Range: [%d, %d]\n", range.first, range.second);
-		double nmissTxSize = nMissTxSz;
-		msg += format("Missed Tx Count: %d, costs Bytes: %f\n", nMissTxCnt, nMissTxSz);
-
-		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		msg += format("Changed Index Count:%d , costs Bytes: %d\n", vChangeRecord.size(), nchangeRecordTxSize);
-
-		int ndelTxSize = vDelIndex.size() * 2;
-		msg += format("Index Deleted Count: %d, costs Bytes: %d \n", vDelIndex.size(), ndelTxSize);
-		int rangeSz = 4;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + rangeSz ;
-		int totalCost = 80 + nMissTxSz + extraCost;
-		msg += format("total Sync Cost Bytes: %d, Missed Tx Percent %f , Extra Cost bytes: %d \n", totalCost, nmissTxSize / totalCost, extraCost);
-		return msg;
-	}
-
-
-	// 计算总字节,额外字节,缺失交易数,缺失交易大小
-	void getCost(vector<int>& vCost){
-		int rangeSz = 4;
-		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		int ndelTxSize = vDelIndex.size() * 2;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + rangeSz ;
-		int totalCost = 80 + nMissTxSz + extraCost;
-		vCost.push_back(totalCost);
-		vCost.push_back(extraCost);
-		vCost.push_back(vChangeRecord.size());
-		vCost.push_back(vDelIndex.size());
-	}
-
-	ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream &s, Operation ser_action)
-    {
-		vector<pair<short,short>> vC;
-		for(auto&e:vChangeRecord)
-			vC.emplace_back(static_cast<short>(e.first), static_cast<short>(e.second));
-		vector<short> del;
-		for(auto&e:vDelIndex)
-			del.emplace_back(e);
-        READWRITE(vC);
-        READWRITE(del);
-        READWRITE(pair<short,short>{static_cast<short>(range.first),static_cast<short>(range.second)});
-        READWRITE(static_cast<short>(nMissTxCnt));
-		READWRITE(static_cast<short>(txCnt));
-    }
-};
-
-void calculateCost(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, CVT& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
+// 返回重建区块的时间耗费
+int64_t calculateCost(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, CVT& vBlkTx, const int blkNum, ReconstructMsg& rm, ostringstream& os){
 	vector<string> newBlkTx;
 	string msg = rm.printMsg();
-	rm.reConstructBlock(mapMissTx,vPredTx,newBlkTx);
+	auto timeuse = rm.reConstructBlock(mapMissTx,vPredTx,newBlkTx);
 	bool rverifyRes = rm.verifyBlock(newBlkTx,vBlkTx, msg);
 	if (!rverifyRes)
 		g_error_blk.push_back(blkNum);
 	msg += format("serialize: %d\n", GetSerializeSize(rm));
 	printf("%s\n", msg.data());
 	os << msg; rm.printMsg();
+	return timeuse;
 }
 
 // 求每一个存在于vBlkTx中的交易,它的最长连续序列是多少
@@ -363,14 +226,13 @@ void calDifference(
 }
 
 
-
-
 /// 比较预测序列和真实的区块序列的区别
 vector<int> CompareBlockTxandPredTx(
-	const int method,
-	const int blkNum, CVT& vBlkTx, CVT& vPredTx, 
+	const int method,const int blkNum, CVT& vBlkTx, CVT& vPredTx, 
 	unordered_map<string, int>& mapBlkTxIndex, unordered_map<string, int>& mapPredTxIndex, 
 	ostringstream& os, unordered_map<int,string>& mapMissTx, int& nMissTxSz) {
+
+	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 	if (vBlkTx.size() <= 1) {
 		std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", g_default_tx_sz+80, 2);
 		return {g_default_tx_sz+80, 0,0,0, 0};
@@ -383,12 +245,16 @@ vector<int> CompareBlockTxandPredTx(
 
 	// 将区块中[0, offset）的交易标记为miss状态，或者是索引发生变化的状态
 	calDifference(method,range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,mapMissTx,vChangeRecord,vDelIndex,nMissTxSz);
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	auto cal_diff_time = (std::chrono::duration_cast<milliseconds>(end-start)).count();
 
 	ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,mapMissTx.size(), nMissTxSz, vBlkTx.size());
-	calculateCost(mapMissTx, vPredTx, vBlkTx, blkNum, rm, os);
+	auto rebuild_time = calculateCost(mapMissTx, vPredTx, vBlkTx, blkNum, rm, os);
 	vector<int> cost;
 	rm.getCost(cost);
 	cost.push_back(GetSerializeSize(rm));
+	cost.push_back(cal_diff_time);
+	cost.push_back(rebuild_time);
 	return std::move(cost);
 }
 
@@ -406,7 +272,7 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 	const string analyse_dir = rootDir + "res.txt";
 	ostringstream os, ansOs;
 	int cmpctBlkHit = 0;
-	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz\n";
+	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz cal_diff_time, rebuild_time\n";
 	while (startBlkNum <= endBlkNum) {
 		const string str_blknum = to_string(startBlkNum);
 		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
@@ -415,8 +281,8 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 		unordered_map<string, int> mapBlkTxIndex, mapPredTxNoneIndex;
 		// 读取交易序列
 		int blkSz = 0;
-		string res = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz);
-		if (res.empty()) {
+		string txid = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz);
+		if (txid.empty()) {
 			++startBlkNum;
 			continue;
 		}
@@ -438,7 +304,8 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 			cmpctSz = mapCmpctInfo[startBlkNum]->blkSz;
 			cmpctBlkHit++;
 		}
-        ansOs << format("%d %d %d %d %d %d %d %d %d %d %d\n", startBlkNum, blkSz, vBlkTx.size(), vpCostNone.back()[0], vpCostNone.back()[1],p.first, p.second, vpCostNone.back()[2], vpCostNone.back()[3],vpCostNone.back().back(), static_cast<int>(cmpctSz));
+		const auto& v = vpCostNone.back();
+        ansOs << format("%d %d %d %d %d %d %d %d %d %d %d %lld %lld\n", startBlkNum, blkSz, vBlkTx.size(), v[0], v[1], p.first, p.second, v[2], v[3],v[4], static_cast<int>(cmpctSz),v[5],v[6]);
 		startBlkNum++;
 	}
 	string msg = "";
