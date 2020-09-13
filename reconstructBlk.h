@@ -1,3 +1,7 @@
+/*
+本程序用于基于Atom协议重建区块
+*/
+
 #include <unordered_map>
 #include <set>
 #include <chrono>

@@ -30,8 +30,6 @@ using namespace std::chrono;
 */
 
 
-
-
 /// <summary>
 /// 从区块文件中读取交易数据，并且返回其中最大的时间戳的那笔交易
 /// </summary>

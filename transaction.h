@@ -1,3 +1,7 @@
+/*
+本程序用于从文件中读取并组织成交易的数据结构
+*/
+
 #include <string>
 #include <vector>
 using namespace std;
