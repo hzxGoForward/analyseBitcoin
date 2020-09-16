@@ -10,8 +10,6 @@
 #include <set>
 #include <cstring>
 #include <chrono>
-
-
 #include "readCmpctBlk.h"
 #include "redifine.h"
 #include "atom.h"
@@ -99,10 +97,15 @@ void calDifference(
 			pi++;
 			bj++;
 		}
-		// 当前predTx序列不存在
-		else if(mapBlkTxIndex.count(vPredTx[pi].txhash)==0){
-			vDelIndex.insert(pi++);
+		// 如果是最后一个,可以直接放入vChangeRecord中,减少删除的index数量
+		else if(bj == vBlkTx.size()-1){
+			const int bj_idx = mapPredTxIndex[vBlkTx[bj].txhash];
+			vChangeRecord[bj_idx] = bj;
+			visitSet.insert(vBlkTx[bj++].txhash);
 		}
+		// 当前predTx序列不存在
+		else if(mapBlkTxIndex.count(vPredTx[pi].txhash)==0)
+			vDelIndex.insert(pi++);
 		else {
 			// 
 			const int pi_len = res[vPredTx[pi].txhash];
@@ -272,7 +275,6 @@ void getRbmDetail(){
 	ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,umapMissTx.size(), p.second, vBlkTx.size());
 	rm.printfDetail(rootDir+"analyse_res/"+str_blknum+"_atom.log");
 }
-
 
 int main() {
 	// getRbmDetail();
