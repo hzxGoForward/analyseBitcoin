@@ -30,6 +30,7 @@ public:
 	}
 };
 
+
 /// <summary>
 /// 从区块文件中读取交易数据，并且返回其中最大的时间戳的那笔交易
 /// </summary>
@@ -38,7 +39,7 @@ public:
 /// <param name="mapTxIndex">为每一笔交易建立哈希值到其索引的映射</param>
 /// <param name="file_dir">文件路径</param>
 /// <returns></returns>
-string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, int& blkSz) {
+string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, int& blkSz, string exp = "0903") {
 	ifstream ifs(file_dir, ios::in);
 	if (!ifs.is_open()) {
 		string msg = format("无法打开文件 %s", file_dir.data());
@@ -56,17 +57,29 @@ string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, 
 			string line(buf);
 			if(line.size()<2)
 				continue;
-			line.pop_back();
+			if(line.back() == '\n')
+				line.pop_back();
 			vector<string> tmp;
 			split(line, ' ', tmp);
 			// 记录交易的哈希值对应的索引
 			mapTxIndex[tmp[1]] = vtx.size();
-			bool missed = (tmp[2] == "Pool" || tmp[2] == "None");
-			bool onlyInSeq = tmp[2] == "Seq";
-			vtx.emplace_back(tmp[0], tmp[1], stoi(tmp[3]), stoi(tmp[4]), stoi(tmp[5]), missed, onlyInSeq);
-			if ((tmp[2] != "None" && tmp[2] != "Pool") && tmp[0] > minTime) {
-				minTime = tmp[0];
-				txid = tmp[1];
+			if(exp == "0903"){
+				bool missed = (tmp[2] == "Pool" || tmp[2] == "None");
+				bool onlyInSeq = tmp[2] == "Seq";
+				vtx.emplace_back(tmp[0], tmp[1], stoi(tmp[3]), stoi(tmp[4]), stoi(tmp[5]), missed, onlyInSeq);
+				if ((tmp[2] != "None" && tmp[2] != "Pool") && tmp[0] > minTime) {
+					minTime = tmp[0];
+					txid = tmp[1];
+				}
+			}
+			else{
+				bool missed = (tmp[5] == "Pool" || tmp[5] == "None");
+				bool onlyInSeq = tmp[5] == "Seq";
+				vtx.emplace_back(tmp[0], tmp[1], stoi(tmp[2]), stoi(tmp[3]), stoi(tmp[4]), missed, onlyInSeq);
+				if ((tmp[5] != "None" && tmp[5] != "Pool") && tmp[0] > minTime) {
+					minTime = tmp[0];
+					txid = tmp[1];
+				}
 			}
 			lasttxHash = tmp[1];
 		}
@@ -76,6 +89,7 @@ string readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir, 
 			vector<string> tmp;
 			split(line, ' ', tmp);
 			blkSz = stoi(tmp[1]);
+			break;
 		}
 		else if (buf[0] == 'p'||buf[0]=='[')
 			break;
