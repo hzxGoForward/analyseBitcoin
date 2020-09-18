@@ -106,12 +106,13 @@ public:
 	}
 
 
-	void printfDetail(const string& dir = ""){
+	void printfDetail(const vector<Transaction>& vPredTx, const string& dir = ""){
 		ostringstream os;
 		os<<format("[%d, %d]\n", range.first, range.second);
 		os<<"DelIndex: "<<vDelIndex.size()<<"\n";
-		for(auto&e: vDelIndex)
-			os<<e<<" ";
+		for(auto&e: vDelIndex){
+			os<<"["<<vPredTx[e].entertime<<" "<<e<<" ] ";
+		}
 		os<<"\nChangeIndex: "<<vChangeRecord.size()<<"\n";
 		for(auto&e:vChangeRecord)
 			os<<e.first<<"->"<<e.second;

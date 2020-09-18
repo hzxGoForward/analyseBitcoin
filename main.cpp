@@ -254,46 +254,49 @@ void calculateexperiment20200908(){
 // 计算某个区块的Atom数据细节
 void getRbmDetail(){
 	string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200903/";
-	int startBlkNum = 646610;
-	// int endBlkNum = 646593;
-	int blkSz = 0;
-	const string str_blknum = to_string(startBlkNum);
-	string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
-	string predBlkwithNone_dir = rootDir + str_blknum + "_predBlk_with_MissTx.log";
-	VT vBlkTx, vPredTx;
-	unordered_map<string, int> mapBlkTxIndex, mapPredTxIndex;
-	string txid = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz);
-	if (txid.empty()) {
-		++startBlkNum;
-		return;
-	}
-	readTxSequence(vPredTx, mapPredTxIndex, predBlkwithNone_dir, blkSz);
-	unordered_map<int,string> umapMissTx;
-	auto p = getMissTxCntSize(vBlkTx, vPredTx, mapPredTxIndex,umapMissTx);
-	ostringstream os;
+	int startBlkNum = 647530;
+	int endBlkNum = 647544;
+	while(startBlkNum<=endBlkNum){
+		int blkSz = 0;
+		const string str_blknum = to_string(startBlkNum++);
+		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
+		string predBlkwithNone_dir = rootDir + str_blknum + "_predBlk_with_MissTx.log";
+		VT vBlkTx, vPredTx;
+		unordered_map<string, int> mapBlkTxIndex, mapPredTxIndex;
+		string txid = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz);
+		if (txid.empty()) {
+			++startBlkNum;
+			return;
+		}
+		readTxSequence(vPredTx, mapPredTxIndex, predBlkwithNone_dir, blkSz);
+		unordered_map<int,string> umapMissTx;
+		auto p = getMissTxCntSize(vBlkTx, vPredTx, mapPredTxIndex,umapMissTx);
+		ostringstream os;
 		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-	if (vBlkTx.size() <= 1) {
-		std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", g_default_tx_sz+80, 2);
-		return;
+		if (vBlkTx.size() <= 1) {
+			std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", g_default_tx_sz+80, 2);
+			return;
+		}
+
+		// 获取预测序列的范围
+		auto range = getPredictRange(vBlkTx, mapPredTxIndex);
+		set<int> vDelIndex;
+		unordered_map<int, int> vChangeRecord;
+
+		// 将区块中[0, offset）的交易标记为miss状态，或者是索引发生变化的状态
+		calDifference(range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,umapMissTx,vChangeRecord,vDelIndex,p.second);
+		std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+		auto cal_diff_time = (std::chrono::duration_cast<milliseconds>(end-start)).count();
+
+		ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,umapMissTx.size(), p.second, vBlkTx.size());
+		rm.printfDetail(vPredTx, rootDir+"analyse_res/"+str_blknum+"_atom.log");
 	}
-
-	// 获取预测序列的范围
-	auto range = getPredictRange(vBlkTx, mapPredTxIndex);
-	set<int> vDelIndex;
-	unordered_map<int, int> vChangeRecord;
-
-	// 将区块中[0, offset）的交易标记为miss状态，或者是索引发生变化的状态
-	calDifference(range,vBlkTx,vPredTx,mapBlkTxIndex,mapPredTxIndex,umapMissTx,vChangeRecord,vDelIndex,p.second);
-	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	auto cal_diff_time = (std::chrono::duration_cast<milliseconds>(end-start)).count();
-
-	ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,umapMissTx.size(), p.second, vBlkTx.size());
-	rm.printfDetail(rootDir+"analyse_res/"+str_blknum+"_atom.log");
+	
 }
 
 
 int main() {
-	// getRbmDetail();
-    calculateexperiment20200908();
+	getRbmDetail();
+    // calculateexperiment20200908();
 	return 0;
 }
