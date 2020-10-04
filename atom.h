@@ -106,19 +106,18 @@ public:
 	}
 
 
-	void printfDetail(const vector<Transaction>& vPredTx, const string& dir = ""){
+	string GetDetail(const vector<Transaction>& vPredTx){
 		ostringstream os;
 		os<<format("[%d, %d]\n", range.first, range.second);
 		os<<"DelIndex: "<<vDelIndex.size()<<"\n";
 		for(auto&e: vDelIndex){
-			os<<"["<<vPredTx[e].entertime<<" "<<e<<" ] ";
+			os<<vPredTx[e].entertime<<" "<<e<<"\n";
 		}
-		os<<"\nChangeIndex: "<<vChangeRecord.size()<<"\n";
+		os<<"ChangeIndex: "<<vChangeRecord.size()<<"\n";
 		for(auto&e:vChangeRecord)
-			os<<e.first<<"->"<<e.second;
+			os<<e.first<<"->"<<e.second<<"\n";
 		os<<"\n";
-		printf("%s\n", os.str());
-		writeFile(dir, os.str());
+		return os.str();
 	}
 
 	// 计算总字节,额外字节,缺失交易数,缺失交易大小
