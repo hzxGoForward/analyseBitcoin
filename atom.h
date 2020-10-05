@@ -10,7 +10,7 @@
 #include "util.h"
 #include "serialize.h"
 using namespace std;
-
+typedef pair<int,int> PII;
 
 // 新建结构体,用于存储重建区块需要的数据结构
 class ReconstructMsg{
@@ -85,8 +85,37 @@ public:
 		return true;
 	}
 
+
+	// 计算删除元素的耗费
+	int getDelIndexCost() const {
+		vector<int> tmpVDelIndex;
+		vector<PII> tmpVDelIndexPair,tmpVChangeIndex;
+		vector<pair<PII,PII>> vChangeIndexPair;
+		int pre = -1;
+		
+		// 将最后一个插入其中
+		auto it = vDelIndex.begin();
+		while(it != vDelIndex.end()){
+			int tmp = *it;
+			int last = *it;
+			while(it != vDelIndex.end() && vDelIndex.count(*it+1)==1){
+				last = *it;
+				it++;
+			}
+			if(tmp == last)
+				tmpVDelIndex.push_back(tmp);
+			else
+			{
+				tmpVDelIndexPair.emplace_back(tmp,last);
+			}
+			if(it!= vDelIndex.end())
+				it++;
+		}
+		return tmpVDelIndex.size() * 2 + tmpVDelIndexPair.size()*4 +6;
+	}
+
 	// 打印各个结果
-	string printMsg()const{
+	string printMsg() const{
 		string msg = "";
 		msg += format("Tx Count in New Block: %d\n", txCnt);
 		msg += format("Predict Range: [%d, %d]\n", range.first, range.second);
@@ -96,10 +125,10 @@ public:
 		int nchangeRecordTxSize = vChangeRecord.size() * 4;
 		msg += format("Changed Index Count:%d , costs Bytes: %d\n", vChangeRecord.size(), nchangeRecordTxSize);
 
-		int ndelTxSize = vDelIndex.size() * 2;
-		msg += format("Index Deleted Count: %d, costs Bytes: %d \n", vDelIndex.size(), ndelTxSize);
+		int ndelCost = getDelIndexCost();
+		msg += format("Index Deleted Count: %d, costs Bytes: %d \n", vDelIndex.size(), ndelCost);
 		int rangeSz = 4;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + rangeSz ;
+		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + ndelCost  + rangeSz;
 		int totalCost = 80 + nMissTxSz + extraCost;
 		msg += format("total Sync Cost Bytes: %d, Missed Tx Percent %f , Extra Cost bytes: %d \n", totalCost, nmissTxSize / totalCost, extraCost);
 		return msg;
@@ -113,6 +142,7 @@ public:
 		for(auto&e: vDelIndex){
 			os<<vPredTx[e].entertime<<" "<<e<<"\n";
 		}
+		os<<"DelCost: "<<getDelIndexCost()<<"\n";
 		os<<"ChangeIndex: "<<vChangeRecord.size()<<"\n";
 		for(auto&e:vChangeRecord)
 			os<<e.first<<"->"<<e.second<<"\n";
@@ -120,12 +150,13 @@ public:
 		return os.str();
 	}
 
-	// 计算总字节,额外字节,缺失交易数,缺失交易大小
+
+
+		// 计算总字节,额外字节,缺失交易数,缺失交易大小
 	void getCost(vector<int>& vCost){
 		int rangeSz = 4;
 		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		int ndelTxSize = vDelIndex.size() * 2;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + rangeSz ;
+		int extraCost = getExtraCost() ;
 		int totalCost = 80 + nMissTxSz + extraCost;
 		vCost.push_back(totalCost);
 		vCost.push_back(extraCost);
@@ -136,7 +167,7 @@ public:
 	// 获得额外花费
 	int getExtraCost(){
 		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + vDelIndex.size()*2  + 4 ;
+		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + getDelIndexCost()  + 4 ;
 		return extraCost;
 	}
 

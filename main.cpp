@@ -13,6 +13,7 @@
 #include "readCmpctBlk.h"
 #include "redifine.h"
 #include "atom.h"
+#include "transaction.h"
 
 
 using namespace std;
@@ -30,7 +31,8 @@ int64_t calculateCost(const unordered_map<int,string>& mapMissTx, CVT& vPredTx, 
 		g_error_blk.push_back(blkNum);
 	msg += format("serialize: %d\n", GetSerializeSize(rm));
 	printf("%s\n", msg.data());
-	os << msg; rm.printMsg();
+	os << msg; 
+	rm.printMsg();
 	return timeuse;
 }
 
@@ -151,6 +153,7 @@ vector<int> CompareBlockTxandPredTx(
 
 	ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,mapMissTx.size(), nMissTxSz, vBlkTx.size());
 	auto rebuild_time = calculateCost(mapMissTx, vPredTx, vBlkTx, blkNum, rm, os);
+	os<< rm.GetDetail(vPredTx);
 	vector<int> cost;
 	rm.getCost(cost);
 	cost.push_back(GetSerializeSize(rm));
@@ -172,7 +175,7 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 	const string save_dir = rootDir+"重构区块_NEW.log";
 	const string analyse_dir = rootDir + "res.txt";
 	ostringstream os, ansOs;
-	int cmpctBlkHit = 0;
+	int cmpctBlkHit = 0, missTxCnt = 0;
 	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz cal_diff_time, rebuild_time\n";
 	while (startBlkNum <= endBlkNum) {
 		const string str_blknum = to_string(startBlkNum);
@@ -181,15 +184,16 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 		VT vBlkTx, vPredTxNone;
 		unordered_map<string, int> mapBlkTxIndex, mapPredTxNoneIndex;
 		// 读取交易序列
-		int blkSz = 0;
-		string txid = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz, exp);
-		if (txid.empty()) {
+		BlockMsg blkMsg = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir,  exp);
+		if (blkMsg.txid.empty()) {
 			++startBlkNum;
 			continue;
 		}
-		readTxSequence(vPredTxNone, mapPredTxNoneIndex, predBlkwithNone_dir, blkSz,exp);
+		blkMsg = readTxSequence(vPredTxNone, mapPredTxNoneIndex, predBlkwithNone_dir,exp);
 		unordered_map<int,string> umapMissTx;
 		auto p = getMissTxCntSize(vBlkTx, vPredTxNone, mapPredTxNoneIndex,umapMissTx);
+		if ( p.first > 1)
+			missTxCnt++;
 		// 比较
 		std::printf("------------block height: %d------------- \n", startBlkNum);
 		os << format("------------block height: %d------------- \n", startBlkNum);
@@ -206,14 +210,15 @@ void calculate(const string& rootDir,map<int,std::shared_ptr<CompactInfo>> mapCm
 			cmpctBlkHit++;
 		}
 		const auto& v = vpCostNone.back();
-        ansOs << format("%d %d %d %d %d %d %d %d %d %d %d %lld %lld\n", startBlkNum, blkSz, vBlkTx.size(), v[0], v[1], p.first, p.second, v[2], v[3],v[4], static_cast<int>(cmpctSz),v[5],v[6]);
+		// block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz cal_diff_time, rebuild_time
+        ansOs << format("%d %d %d %d %d %d %d %d %d %d %d %lld %lld\n", startBlkNum, blkMsg.blockSize, vBlkTx.size(), v[0], v[1], p.first, p.second, v[2], v[3],v[4], static_cast<int>(cmpctSz),v[5],v[6]);
 		startBlkNum++;
 	}
 	string msg = "";
 	size_t blkCnt = vpCostNone.size();
 	msg += format("3-------Total:Block Count: %d, Cost Bytes: %f, Extra Cost Bytes: %f,seExtra cost: %f \n", blkCnt, totalCostNone, extraCostNone,seExtraCost );
 	msg += format("3-------Per: Block Cost: %f, ExtraCost: %f,SerializeCost: %f\n", totalCostNone / blkCnt, extraCostNone / blkCnt, seExtraCost/blkCnt);
-	msg += format("压缩区块大小数: %d, 总区块数: %d\n",cmpctBlkHit,blkCnt);
+	msg += format("压缩区块大小数: %d, 总区块数: %d, 缺失交易超过1笔的区块数: %d \n",cmpctBlkHit,blkCnt, missTxCnt);
 	os << msg;
 	writeFile(save_dir, os.str());
 	writeFile(analyse_dir, ansOs.str());
@@ -242,42 +247,97 @@ void calculateexperiment20200908(){
 	string cmpctBlkdir = rootDir+"2020-09-";
 	map<int,std::shared_ptr<CompactInfo>> mapCmpctInfo;
 	getCmpctInfo(cmpctBlkdir, 3, 10, mapCmpctInfo);
-	int startBlkNum = 647545;// 647545;
-	int endBlkNum = 648879;// 648879;
+	int startBlkNum = 647544;// 647545;
+	int endBlkNum = 649616;// 648879;
 	calculate(rootDir, mapCmpctInfo, startBlkNum, endBlkNum, "_new_block.log","_pred_block.log", "0908");
 	printf("构造失败区块数量: %lu \n", g_error_blk.size());
 	for(auto&blkNum:g_error_blk)
 		printf("%d \n", blkNum);
+}
 
+
+
+// 计算experiment20200908试验的结果
+void calculateexperiment20200925(){
+	string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200925/";
+	int startBlkNum = 649919, endBlkNum = 649962;// 649962;
+	map<int,std::shared_ptr<CompactInfo>> mapCmpctInfo;
+	
+	// 读取交易序列
+	ostringstream os, ansOs;
+	ansOs<<"block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz cal_diff_time, rebuild_time\n";
+	while(startBlkNum <= endBlkNum){
+		for(int i = 0; i < 1000; ++i){
+			
+			string blk_dir_miner = rootDir + "simulate_miner_"+format("%d_%d.log", startBlkNum, i);
+			VT vBlkTx;
+			unordered_map<string, int> mapBlkTxIndex;
+			BlockMsg blkMsg1 = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir_miner,"0925");
+			if (blkMsg1.txid.empty())
+				continue;
+			for(int j = 1; j< 2; ++j){
+				
+				VT  vPredTx;
+				unordered_map<string, int> mapPredTxIndex;
+				string blk_dir_pred = rootDir + "simulate_pred_"+ format("%d_%d.log", startBlkNum, i+j);
+				BlockMsg blkMsg2 = readTxSequence(vPredTx, mapPredTxIndex, blk_dir_pred,"0925");
+				if (blkMsg2.txid.empty())
+					continue;
+				os << format("------------block height: %d, simulate: %d, pred: %d ------------- \n", startBlkNum, i, i+j);
+				unordered_map<int,string> umapMissTx;
+				auto p = getMissTxCntSize(vBlkTx, vPredTx, mapPredTxIndex, umapMissTx);
+				// if(p.first>1)
+				// 	printf("%d %d %d miss交易多余1个\n", );
+				auto v = CompareBlockTxandPredTx(1,startBlkNum,vBlkTx, vPredTx, mapBlkTxIndex, mapPredTxIndex, os, umapMissTx, p.second);
+				printf("%s\n", os.str().data());
+				// block_num block_sz tx_cnt total_cost extra_cost miss_tx_cnt miss_tx_sz changeCnt delCnt extraSeraSz cmpctSz cal_diff_time, rebuild_time
+				ansOs << format("%d %d %d %d %d %d %d %d %d %d %d %lld %lld\n", startBlkNum, blkMsg1.blockSize, vBlkTx.size(), v[0], v[1], p.first, p.second, v[2], v[3],v[4], blkMsg1.compactBlkSz,v[5],v[6]);	
+			}
+		}
+		startBlkNum++;
+	}
+	const string analyse_dir = rootDir + "res.txt";
+	const string save_dir = rootDir+"重构区块_NEW.log";
+	writeFile(analyse_dir, ansOs.str());
+	writeFile(save_dir, os.str());
+	return;
 }
 
 // 计算某个区块的Atom数据细节
-void getRbmDetail(){
-	string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200903/";
-	int startBlkNum = 647530;
-	int endBlkNum = 647544;
-	while(startBlkNum<=endBlkNum){
+void getRbmDetail(const string& rootDir, const string& blkSuffix, const string& predSuffix, const pair<int,int> range, const string& df){
+	int startBlkNum = range.first;
+	while(startBlkNum<=range.second){
 		int blkSz = 0;
 		const string str_blknum = to_string(startBlkNum++);
-		string blk_dir = rootDir + str_blknum + "_predBlk_NewBlk_Compare.log";
-		string predBlkwithNone_dir = rootDir + str_blknum + "_predBlk_with_MissTx.log";
+		string blk_dir = rootDir + str_blknum + blkSuffix;
+		string predBlkwithNone_dir = rootDir + str_blknum + predSuffix;
 		VT vBlkTx, vPredTx;
 		unordered_map<string, int> mapBlkTxIndex, mapPredTxIndex;
-		string txid = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, blkSz);
-		if (txid.empty()) {
+		BlockMsg blkMsg  = readTxSequence(vBlkTx, mapBlkTxIndex, blk_dir, df);
+		if (blkMsg.txid.empty()) {
 			++startBlkNum;
 			return;
 		}
-		readTxSequence(vPredTx, mapPredTxIndex, predBlkwithNone_dir, blkSz);
+		readTxSequence(vPredTx, mapPredTxIndex, predBlkwithNone_dir, df);
 		unordered_map<int,string> umapMissTx;
 		auto p = getMissTxCntSize(vBlkTx, vPredTx, mapPredTxIndex,umapMissTx);
-		ostringstream os;
 		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 		if (vBlkTx.size() <= 1) {
 			std::printf("是空区块，总开销: %d 字节， 重建序列开销: %d \n", g_default_tx_sz+80, 2);
 			return;
 		}
 
+		// 遍历vBlkTx中每一笔交易，找出存在于vPredTx中交易的最大时间戳
+		string maxTxid = "", ts = "";
+		for(auto&tx:mapBlkTxIndex){
+			if(mapPredTxIndex.count(tx.first)){
+				int idx = mapPredTxIndex[tx.first];
+				if(ts.empty() || ts <vPredTx[idx].entertime){
+					ts = vPredTx[idx].entertime;
+					maxTxid = vPredTx[idx].txhash;
+				}
+			}
+		}
 		// 获取预测序列的范围
 		auto range = getPredictRange(vBlkTx, mapPredTxIndex);
 		set<int> vDelIndex;
@@ -289,14 +349,31 @@ void getRbmDetail(){
 		auto cal_diff_time = (std::chrono::duration_cast<milliseconds>(end-start)).count();
 
 		ReconstructMsg rm(std::move(vChangeRecord),vDelIndex, range,umapMissTx.size(), p.second, vBlkTx.size());
-		rm.printfDetail(vPredTx, rootDir+"analyse_res/"+str_blknum+"_atom.log");
+		string res = rm.GetDetail(vPredTx);
+		res += format("time: %s maxtxid: %s, \n", ts.data(),maxTxid.data());
+		res += format("tx_cnt: %d\n", vBlkTx.size());
+		const string save_dir = rootDir+"analyse_res/"+str_blknum+"_atom.log";
+		writeFile(save_dir, res);
 	}
-	
 }
 
 
 int main() {
-	getRbmDetail();
-    // calculateexperiment20200908();
+	
+	// const string blkSuffix = "_predBlk_NewBlk_Compare.log";
+	// const string predSuffix = "_predBlk_with_MissTx.log";
+	
+	
+	// const string rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200908/";
+	// const string blkSuffix = "_new_block.log";
+	// const string predSuffix = "_pred_block.log";
+	// const pair<int,int> p = {649600, 649616};
+	// const string df = "0908";
+	// getRbmDetail(rootDir, blkSuffix, predSuffix, p, df);
+    // // calculateexperiment20200908();
+
+
+
+	calculateexperiment20200925();
 	return 0;
 }
