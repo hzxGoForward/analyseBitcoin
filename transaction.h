@@ -119,7 +119,7 @@ BlockMsg readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir
 		}
 		else if (buf[0] == 'c'&&buf[1] == 'm'){
 			string line(buf);
-			line.pop_back();
+			// line.pop_back();
 			vector<string> tmp;
 			split(line, ' ', tmp);
 			blkMsg.compactBlkSz = stoi(tmp[1]);
@@ -127,7 +127,7 @@ BlockMsg readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir
 		}
 		else if (buf[0] == 'b'&&buf[1] == 'l'){
 			string line(buf);
-			line.pop_back();
+			// line.pop_back();
 			if(line.find("block_size")!=string::npos){
 				vector<string> tmp;
 				split(line, ' ', tmp);
@@ -137,14 +137,14 @@ BlockMsg readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir
 		}
 		else if (buf[0] == 'm'&&buf[1] == 'e'){
 			string line(buf);
-			line.pop_back();
-			vector<string> tmp;
-			split(line, ' ', tmp);
-			blkMsg.mempool_tx_cnt = stoi(tmp[1]);
-			// break;
+			if(line.find("mempool_tx_cnt")!=string::npos){
+				vector<string> tmp;
+				split(line, ' ', tmp);
+				blkMsg.mempool_tx_cnt = stoi(tmp[1]);
+			}
 		}
-		else if (buf[0] == 'p'||buf[0]=='[')
-			break;
+		// else if (buf[0] == 'p'||buf[0]=='[')
+		// 	break;
 	}
 	return blkMsg;
 }

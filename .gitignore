@@ -7,3 +7,5 @@ Debug
 *.exe
 *.out
 *.xlsx
+*.txt
+*.log

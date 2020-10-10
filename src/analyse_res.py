@@ -3,11 +3,11 @@ import openpyxl
 import os
 
 # 将backup中的compactBlockValidation文本数据转换为xlsx文件
-def ConvertTxt2Xlsx(file_path):
+def ConvertTxt2Xlsx(file_path, save_dir):
     if os.path.exists(file_path) == False:
         print("{} doesn't exists\n".foramt(file_path))
         return
-    save_dir = os.getcwd()                 # 获取保存路径
+    # save_dir = os.getcwd()                 # 获取保存路径
     file_dir, file_full_name = os.path.split(file_path)
     saveName, postName = os.path.splitext(file_full_name)   # 获取文件名
     print("文件目录: {}\n文件全名: {}\n文件名: {}\n后缀名: {}".format(file_dir, file_full_name, saveName, postName ))
@@ -49,11 +49,23 @@ def ConvertTxt2Xlsx(file_path):
             row += 1
         line = f.readline()  
     f.close()
-    dir = os.path.join(save_dir, saveName+".xlsx")
-    workbook.save(dir)
+    # dir = os.path.join(save_dir, saveName+".xlsx")
+    workbook.save(save_dir)
     print("数据转换完毕~")
 
 
 if __name__ == "__main__":
-    dir = "/home/hzx/Documents/github/cpp/analyseBitcoin/experiment20200925/res.txt"
-    ConvertTxt2Xlsx(dir)
+    
+
+    rootDir = "/home/hzx/Documents/github/cpp/analyseBitcoin/src/"
+    fileDir1 = rootDir + "646549_647557_analyse.txt"
+    save_dir1 = rootDir + "646549_647557_analyse.xlsx"
+    ConvertTxt2Xlsx(fileDir1, save_dir1)
+
+    fileDir2 = rootDir + "647544_649905_analyse.txt"
+    save_dir2 = rootDir + "647544_649905_analyse.xlsx"
+    ConvertTxt2Xlsx(fileDir2, save_dir2)
+    
+    fileDir3 = rootDir + "647545_651925_analyse.txt"
+    save_dir3 = rootDir + "647545_651925_analyse.xlsx"
+    ConvertTxt2Xlsx(fileDir3, save_dir3)

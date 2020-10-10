@@ -9,6 +9,7 @@
 #include <fstream>
 #include <cassert>
 #include <cstdio>
+#include <random>
 using namespace std;
 
 vector<int> g_error_blk;                // 构建失败的区块,存放区块号
@@ -57,5 +58,12 @@ std::string format(const char* format, Args... args) {
 	delete[] buf;
 	return str;
 }
+
+double getRandom(const double d1, const double d2){
+	default_random_engine e;
+    uniform_real_distribution<double> u(d1, d2);
+	return u(e);
+}
+
 
 #endif

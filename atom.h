@@ -39,7 +39,7 @@ public:
 		// 根据得到的误差重新构建新的区块大小
 		newBlk.reserve(txCnt);
 		newBlk.resize(txCnt, "");
-		// 首先构建缺失的交易
+		// 首先构建coinbase交易
 		std::set<string> missHashSet;
 		for (auto& p : mapMissTx){
 			newBlk[p.first] = p.second;
@@ -114,26 +114,6 @@ public:
 		return tmpVDelIndex.size() * 2 + tmpVDelIndexPair.size()*4 +6;
 	}
 
-	// 打印各个结果
-	string printMsg() const{
-		string msg = "";
-		msg += format("Tx Count in New Block: %d\n", txCnt);
-		msg += format("Predict Range: [%d, %d]\n", range.first, range.second);
-		double nmissTxSize = nMissTxSz;
-		msg += format("Missed Tx Count: %d, costs Bytes: %f\n", nMissTxCnt, nMissTxSz);
-
-		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		msg += format("Changed Index Count:%d , costs Bytes: %d\n", vChangeRecord.size(), nchangeRecordTxSize);
-
-		int ndelCost = getDelIndexCost();
-		msg += format("Index Deleted Count: %d, costs Bytes: %d \n", vDelIndex.size(), ndelCost);
-		int rangeSz = 4;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + ndelCost  + rangeSz;
-		int totalCost = 80 + nMissTxSz + extraCost;
-		msg += format("total Sync Cost Bytes: %d, Missed Tx Percent %f , Extra Cost bytes: %d \n", totalCost, nmissTxSize / totalCost, extraCost);
-		return msg;
-	}
-
 
 	string GetDetail(const vector<Transaction>& vPredTx){
 		ostringstream os;
@@ -154,21 +134,41 @@ public:
 
 		// 计算总字节,额外字节,缺失交易数,缺失交易大小
 	void getCost(vector<int>& vCost){
-		int rangeSz = 4;
-		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		int extraCost = getExtraCost() ;
-		int totalCost = 80 + nMissTxSz + extraCost;
+		int DinosCost = getDinosCost() ;
+		int totalCost = 80 + nMissTxSz + DinosCost;
 		vCost.push_back(totalCost);
-		vCost.push_back(extraCost);
+		vCost.push_back(DinosCost);
 		vCost.push_back(vChangeRecord.size());
 		vCost.push_back(vDelIndex.size());
 	}
 
 	// 获得额外花费
-	int getExtraCost(){
+	int getDinosCost()const{
+		const int rangeSz = 4;					// pb 和 pe 
+		const int vChangeTail = 4;				// {-1,-1}表示坐标变化的结尾
+		const int vDelIndexTail = 2;			// {-1} 表示删除索引结束
+		const int vDelIndexPairTail = 4;		// {-1,-1} 表示删除索引pair的结束
+		const int vmissedTxSize = nMissTxCnt*2;
+ 		return vChangeRecord.size() * 4 + getDelIndexCost()  + 4 + 4 + 2 + 4 ;// 4 个字节用表示Pb和Pe的范围
+	}
+
+	// 打印各个结果
+	string printMsg() const{
+		string msg = "";
+		msg += format("Tx Count in New Block: %d\n", txCnt);
+		msg += format("Predict Range: [%d, %d]\n", range.first, range.second);
+		msg += format("Missed Tx Count: %d, costs Bytes: %d\n", nMissTxCnt, nMissTxSz);
+
 		int nchangeRecordTxSize = vChangeRecord.size() * 4;
-		int extraCost = nMissTxCnt*2 + nchangeRecordTxSize + getDelIndexCost()  + 4 ;
-		return extraCost;
+		msg += format("Changed Index Count:%d , costs Bytes: %d\n", vChangeRecord.size(), nchangeRecordTxSize);
+
+		int ndelCost = getDelIndexCost();
+		msg += format("Index Deleted Count: %d, costs Bytes: %d \n", vDelIndex.size(), ndelCost);
+		int rangeSz = 4;
+		int DinosCost = getDinosCost() ;
+		int totalCost = 80 + nMissTxSz + DinosCost;
+		msg += format("total Sync Cost Bytes: %d, Missed Tx Percent %f , Dinos Cost bytes: %d \n", totalCost, static_cast<double>(nMissTxSz) / totalCost, DinosCost);
+		return msg;
 	}
 
 	ADD_SERIALIZE_METHODS;
