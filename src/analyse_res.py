@@ -69,3 +69,9 @@ if __name__ == "__main__":
     fileDir3 = rootDir + "647545_651925_analyse.txt"
     save_dir3 = rootDir + "647545_651925_analyse.xlsx"
     ConvertTxt2Xlsx(fileDir3, save_dir3)
+    
+    
+    
+    # fileDir3 = rootDir + "651388_652194_sim3_res.txt"
+    # save_dir3 = rootDir + "651388_652194_sim3_analyse.xlsx"
+    # ConvertTxt2Xlsx(fileDir3, save_dir3)
