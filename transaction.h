@@ -149,7 +149,6 @@ BlockMsg readTxSequence(VT& vtx, UMapTxIndex& mapTxIndex, const string& file_dir
 	return blkMsg;
 }
 
-
 pair<int,int> getMissTxCntSize(CVT& vBlkTx, CVT& vPredTx, unordered_map<string, int>& mapPredTxIndex, unordered_map<int,string>& mapMissTx) {
 	size_t sz=0;
 	for (size_t i = 0; i < vBlkTx.size(); ++i) {
